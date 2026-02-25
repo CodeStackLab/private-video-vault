@@ -135,6 +135,7 @@ updatePasswordBtn.addEventListener('click', async () => {
 
 // --- Video Functions ---
 async function loadVideos() {
+    // Try to load videos
     const { data, error } = await db
         .from('videos')
         .select('*')
@@ -142,6 +143,18 @@ async function loadVideos() {
 
     if (error) {
         console.error('Vault: Error loading videos:', error);
+        // If the thumbnail column is missing, load without it as a fallback
+        if (error.message.includes('thumbnail_url')) {
+            const { data: fallbackData, error: fallbackError } = await db
+                .from('videos')
+                .select('id, url, title, created_at')
+                .order('created_at', { ascending: false });
+
+            if (!fallbackError) {
+                renderVideos(fallbackData);
+                return;
+            }
+        }
         return;
     }
 
@@ -158,7 +171,7 @@ function renderVideos(videos) {
         const hasThumb = video.thumbnail_url && video.thumbnail_url !== '';
 
         return `
-        <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}" data-hobby="${(video.hobby || '').toLowerCase()}">
+        <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}" data-hobby="">
             <div class="video-thumb" id="thumb-${video.id}">
                 ${hasThumb ?
                 `<img src="${video.thumbnail_url}" class="video-poster" alt="Preview">
@@ -171,7 +184,6 @@ function renderVideos(videos) {
             </div>
             <div class="video-info">
                 <h3>${video.title || 'Untitled'}</h3>
-                ${video.hobby ? `<span class="hobby-tag">${video.hobby}</span>` : ''}
                 <div class="card-actions">
                     <a href="${video.url}" target="_blank" class="live-btn">Live URL</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
@@ -189,14 +201,16 @@ function loadEmbed(id, url) {
     }
 }
 
-// Logic to convert main URL to embed format and extract title
+// Logic to convert main URL to embed format
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
 
     let finalUrl = url;
 
-    if (url.includes('xhamster') && !url.includes('/embed/')) {
+    // xHamster logic: convert main URL to embed URL
+    if (url.includes('xhamster')) {
+        // e.g. xhamster.com/videos/title-id12345 -> xhamster.com/embed/12345
         const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
         if (match) {
             const id = match[2] || match[1];
@@ -204,33 +218,29 @@ function getEmbedHtml(url) {
         }
     }
 
-    if (url.includes('spankbang.com') && !url.includes('/embed/')) {
+    // SpankBang logic
+    if (url.includes('spankbang.com')) {
         const match = url.match(/\/video\/([a-z0-9]+)/i);
         if (match) {
             finalUrl = `https://spankbang.com/${match[1]}/embed/`;
         }
     }
 
+    // Generic fallback: ensure it's treated as a URL for iframe
     return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
 }
 
-// Heuristic to extract title from URL
+// Extract title from URL
 function extractTitleFromUrl(url) {
     try {
         const urlObj = new URL(url);
-        let path = urlObj.pathname;
-
-        // Clean trailing slash
-        if (path.endsWith('/')) path = path.slice(0, -1);
-
-        let segment = path.split('/').pop();
-
-        // Specific cleanup for xHamster/Spankbang styles
-        segment = segment.replace(/(-id[0-9]+)$|(-[0-9]+)$/i, ''); // remove id suffix
-        segment = segment.replace(/[-_]/g, ' '); // underscores/hyphens to spaces
-
-        // Capitalize words
-        return segment.charAt(0).toUpperCase() + segment.slice(1);
+        let segment = urlObj.pathname.split('/').pop();
+        if (!segment && urlObj.pathname.split('/').length > 1) {
+            segment = urlObj.pathname.split('/').slice(-2, -1)[0];
+        }
+        segment = segment.replace(/(-id[0-9]+)$|(-[0-9]+)$/i, '');
+        segment = segment.replace(/[-_]/g, ' ');
+        return segment ? segment.charAt(0).toUpperCase() + segment.slice(1) : "Untitled";
     } catch (e) {
         return "Untitled Video";
     }
@@ -240,18 +250,25 @@ videoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = document.getElementById('video-url').value;
     const thumbnail_url = document.getElementById('video-thumbnail').value;
-
-    // Auto-extract title
     const title = extractTitleFromUrl(url);
 
-    console.log("Vault: Adding video with auto-title:", title);
+    console.log("Vault: Trying to add video...");
 
-    const { error } = await db
+    // TRY 1: Insert WITH thumbnail_url
+    let { error } = await db
         .from('videos')
         .insert([{ url, title, thumbnail_url }]);
 
+    // FALLBACK: If thumbnail_url column is missing, try WITHOUT it
+    if (error && error.message.includes('thumbnail_url')) {
+        console.warn("Vault: thumbnail_url column missing! Retrying without it...");
+        const { error: fallbackError } = await db
+            .from('videos')
+            .insert([{ url, title }]);
+        error = fallbackError;
+    }
+
     if (error) {
-        console.error("Vault: Add Error:", error);
         alert('Error adding video: ' + error.message);
     } else {
         videoForm.reset();
@@ -291,8 +308,7 @@ searchInput.addEventListener('input', (e) => {
 
     cards.forEach(card => {
         const title = card.getAttribute('data-title') || '';
-        const hobby = card.getAttribute('data-hobby') || '';
-        if (title.includes(term) || hobby.includes(term)) {
+        if (title.includes(term)) {
             card.style.display = 'block';
         } else {
             card.style.display = 'none';
