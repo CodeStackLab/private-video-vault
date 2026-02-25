@@ -293,9 +293,47 @@ p {
     line-height: 1.6;
 }
 
-.error-msg {
-    color: var(--error);
-    margin-top: 15px;
+/* Thumbnail & Play Overlay */
+.video-poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: var(--transition);
+}
+
+.video-card:hover .video-poster {
+    transform: scale(1.05);
+}
+
+.play-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: var(--transition);
+    z-index: 2;
+}
+
+.play-overlay:hover {
+    opacity: 1;
+    background: rgba(157, 78, 221, 0.3);
+}
+
+.play-icon {
+    font-size: 3rem;
+    color: white;
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    margin-bottom: 10px;
+}
+
+.play-overlay p {
+    color: white;
+    font-weight: 600;
     font-size: 0.9rem;
 }
 

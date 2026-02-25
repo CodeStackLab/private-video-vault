@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +13,7 @@
     <!-- Supabase JS Library -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
+
 <body class="dark-theme">
     <div id="loader" class="loader-container">
         <div class="spinner"></div>
@@ -45,8 +47,10 @@
                 <h2>Manage Videos</h2>
                 <form id="video-form" class="video-form">
                     <div class="grid-form">
-                        <input type="text" id="video-url" placeholder="Video URL (Embed or Direct)" required>
+                        <input type="text" id="video-url" placeholder="Video URL (e.g. xhamster.com/embed/123)"
+                            required>
                         <input type="text" id="video-title" placeholder="Title" required>
+                        <input type="text" id="video-thumbnail" placeholder="Thumbnail Image URL (Optional)">
                         <input type="text" id="video-hobby" placeholder="Category/Hobby">
                         <button type="submit" id="submit-video">Add Video</button>
                     </div>
@@ -56,7 +60,7 @@
                     <div id="video-preview"></div>
                 </div>
             </div>
-            
+
             <div class="glass-card password-settings">
                 <h3>Settings</h3>
                 <div class="input-group">
@@ -85,4 +89,5 @@
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>
+
 </html>

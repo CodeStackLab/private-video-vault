@@ -142,6 +142,10 @@ async function loadVideos() {
 
     if (error) {
         console.error('Vault: Error loading videos:', error);
+        if (error.message.includes('column "thumbnail_url" does not exist')) {
+            console.log("Vault: Thumbnail column missing, trying to fix...");
+            // We can't fix schema from JS strictly with RLS usually, but we notify user.
+        }
         return;
     }
 
@@ -154,10 +158,20 @@ function renderVideos(videos) {
         return;
     }
 
-    videoGrid.innerHTML = videos.map(video => `
-        <div class="video-card" data-title="${(video.title || '').toLowerCase()}" data-hobby="${(video.hobby || '').toLowerCase()}">
-            <div class="video-thumb">
-                ${getEmbedHtml(video.url)}
+    videoGrid.innerHTML = videos.map(video => {
+        const hasThumb = video.thumbnail_url && video.thumbnail_url !== '';
+
+        return `
+        <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}" data-hobby="${(video.hobby || '').toLowerCase()}">
+            <div class="video-thumb" id="thumb-${video.id}">
+                ${hasThumb ?
+                `<img src="${video.thumbnail_url}" class="video-poster" alt="Preview">
+                     <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
+                        <span class="play-icon">▶</span>
+                        <p>Click to Load Player</p>
+                     </div>`
+                : getEmbedHtml(video.url)
+            }
             </div>
             <div class="video-info">
                 <h3>${video.title || 'Untitled'}</h3>
@@ -165,30 +179,64 @@ function renderVideos(videos) {
                 <div class="card-actions">
                     <a href="${video.url}" target="_blank" class="live-btn">Live URL</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
+                    ${hasThumb ? `<button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Preview</button>` : ''}
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
+function loadEmbed(id, url) {
+    const container = document.getElementById(`thumb-${id}`);
+    if (container) {
+        container.innerHTML = getEmbedHtml(url);
+    }
+}
+
+// Helper to sanitize/smart-convert URLs
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
-    return `<iframe src="${url}" allowfullscreen></iframe>`;
+
+    let finalUrl = url;
+
+    // xHamster logic: convert main URL to embed URL
+    if (url.includes('xhamster') && !url.includes('/embed/')) {
+        // e.g. xhamster.com/videos/title-id12345 -> xhamster.com/embed/12345
+        const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
+        if (match) {
+            const id = match[2] || match[1];
+            finalUrl = `https://xhamster.com/embed/${id}`;
+        }
+    }
+
+    // SpankBang logic
+    if (url.includes('spankbang.com') && !url.includes('/embed/')) {
+        const match = url.match(/\/video\/([a-z0-9]+)/i);
+        if (match) {
+            finalUrl = `https://spankbang.com/${match[1]}/embed/`;
+        }
+    }
+
+    return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
 }
 
 videoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = document.getElementById('video-url').value;
     const title = document.getElementById('video-title').value;
+    const thumbnail_url = document.getElementById('video-thumbnail').value;
     const hobby = document.getElementById('video-hobby').value;
+
+    console.log("Vault: Adding video with thumb:", thumbnail_url);
 
     const { error } = await db
         .from('videos')
-        .insert([{ url, title, hobby }]);
+        .insert([{ url, title, hobby, thumbnail_url }]);
 
     if (error) {
-        alert('Error adding video: ' + error.message);
+        console.error("Vault: Add Error:", error);
+        alert('Error adding video: ' + error.message + "\n\nTip: You might need to add the 'thumbnail_url' column to your Supabase 'videos' table.");
     } else {
         videoForm.reset();
         loadVideos();
@@ -212,6 +260,7 @@ async function deleteVideo(id) {
 
 // Global exposure
 window.deleteVideo = deleteVideo;
+window.loadEmbed = loadEmbed;
 
 // --- UI Logic ---
 showAdminBtn.addEventListener('click', () => {
