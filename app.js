@@ -142,10 +142,6 @@ async function loadVideos() {
 
     if (error) {
         console.error('Vault: Error loading videos:', error);
-        if (error.message.includes('column "thumbnail_url" does not exist')) {
-            console.log("Vault: Thumbnail column missing, trying to fix...");
-            // We can't fix schema from JS strictly with RLS usually, but we notify user.
-        }
         return;
     }
 
@@ -193,16 +189,14 @@ function loadEmbed(id, url) {
     }
 }
 
-// Helper to sanitize/smart-convert URLs
+// Logic to convert main URL to embed format and extract title
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
 
     let finalUrl = url;
 
-    // xHamster logic: convert main URL to embed URL
     if (url.includes('xhamster') && !url.includes('/embed/')) {
-        // e.g. xhamster.com/videos/title-id12345 -> xhamster.com/embed/12345
         const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
         if (match) {
             const id = match[2] || match[1];
@@ -210,7 +204,6 @@ function getEmbedHtml(url) {
         }
     }
 
-    // SpankBang logic
     if (url.includes('spankbang.com') && !url.includes('/embed/')) {
         const match = url.match(/\/video\/([a-z0-9]+)/i);
         if (match) {
@@ -221,22 +214,45 @@ function getEmbedHtml(url) {
     return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
 }
 
+// Heuristic to extract title from URL
+function extractTitleFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        let path = urlObj.pathname;
+
+        // Clean trailing slash
+        if (path.endsWith('/')) path = path.slice(0, -1);
+
+        let segment = path.split('/').pop();
+
+        // Specific cleanup for xHamster/Spankbang styles
+        segment = segment.replace(/(-id[0-9]+)$|(-[0-9]+)$/i, ''); // remove id suffix
+        segment = segment.replace(/[-_]/g, ' '); // underscores/hyphens to spaces
+
+        // Capitalize words
+        return segment.charAt(0).toUpperCase() + segment.slice(1);
+    } catch (e) {
+        return "Untitled Video";
+    }
+}
+
 videoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = document.getElementById('video-url').value;
-    const title = document.getElementById('video-title').value;
     const thumbnail_url = document.getElementById('video-thumbnail').value;
-    const hobby = document.getElementById('video-hobby').value;
 
-    console.log("Vault: Adding video with thumb:", thumbnail_url);
+    // Auto-extract title
+    const title = extractTitleFromUrl(url);
+
+    console.log("Vault: Adding video with auto-title:", title);
 
     const { error } = await db
         .from('videos')
-        .insert([{ url, title, hobby, thumbnail_url }]);
+        .insert([{ url, title, thumbnail_url }]);
 
     if (error) {
         console.error("Vault: Add Error:", error);
-        alert('Error adding video: ' + error.message + "\n\nTip: You might need to add the 'thumbnail_url' column to your Supabase 'videos' table.");
+        alert('Error adding video: ' + error.message);
     } else {
         videoForm.reset();
         loadVideos();

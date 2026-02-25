@@ -176,7 +176,7 @@ button:hover {
 
 .grid-form {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
+    grid-template-columns: 2fr 1fr auto;
     gap: 15px;
     margin-top: 20px;
 }
