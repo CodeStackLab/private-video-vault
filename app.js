@@ -1,5 +1,6 @@
 // Initialize Supabase
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+console.log("Vault: Connecting to Supabase...", SUPABASE_URL);
 
 // State Management
 let currentPassword = localStorage.getItem('vault_password') || '';
@@ -23,7 +24,12 @@ const newPasswordInput = document.getElementById('new-password');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    await checkAuth();
+    console.log("Vault: DOM Loaded");
+    try {
+        await checkAuth();
+    } catch (err) {
+        console.error("Vault: Init Error:", err);
+    }
     hideLoader();
 });
 
@@ -34,19 +40,22 @@ function hideLoader() {
 // --- Auth Functions ---
 async function checkAuth() {
     if (!currentPassword) {
+        console.log("Vault: No password found in storage");
         showAuthScreen();
         return;
     }
 
     // Verify password against Supabase settings table
-    const { data, error } = await supabase
+    const { data, error } = await db
         .from('settings')
         .select('admin_password')
         .single();
 
     if (error || !data || data.admin_password !== currentPassword) {
+        console.log("Vault: Auth Failed or Password Reset Required");
         showAuthScreen();
     } else {
+        console.log("Vault: Auth Success");
         showMainContent();
         loadVideos();
     }
@@ -66,23 +75,28 @@ unlockBtn.addEventListener('click', async () => {
     const pwd = adminPasswordInput.value;
     if (!pwd) return;
 
+    console.log("Vault: Attempting unlock...");
+
     // Check if settings exist, if not, first user sets the password
-    const { data: settings, error: fetchError } = await supabase
+    const { data: settings, error: fetchError } = await db
         .from('settings')
         .select('admin_password')
         .single();
 
-    if (fetchError && fetchError.code === 'PGRST116') {
+    if (fetchError && (fetchError.code === 'PGRST116' || fetchError.message.includes('0 rows'))) {
         // Table is empty, initialize with this password
-        const { error: initError } = await supabase
+        console.log("Vault: Initializing database with first password");
+        const { error: initError } = await db
             .from('settings')
             .insert([{ id: 1, admin_password: pwd }]);
 
         if (initError) {
+            console.error("Vault: Initialization Error:", initError);
             alert('Error initializing database. Check Supabase RLS policies.');
             return;
         }
     } else if (settings && settings.admin_password !== pwd) {
+        console.log("Vault: Wrong password");
         authError.classList.remove('hidden');
         return;
     }
@@ -104,7 +118,7 @@ updatePasswordBtn.addEventListener('click', async () => {
     const newPwd = newPasswordInput.value;
     if (!newPwd) return;
 
-    const { error } = await supabase
+    const { error } = await db
         .from('settings')
         .update({ admin_password: newPwd })
         .eq('id', 1);
@@ -121,13 +135,13 @@ updatePasswordBtn.addEventListener('click', async () => {
 
 // --- Video Functions ---
 async function loadVideos() {
-    const { data, error } = await supabase
+    const { data, error } = await db
         .from('videos')
         .select('*')
         .order('created_at', { ascending: false });
 
     if (error) {
-        console.error('Error loading videos:', error);
+        console.error('Vault: Error loading videos:', error);
         return;
     }
 
@@ -135,18 +149,18 @@ async function loadVideos() {
 }
 
 function renderVideos(videos) {
-    if (videos.length === 0) {
-        videoGrid.innerHTML = '<div class="empty-state"><p>No videos found.</p></div>';
+    if (!videos || videos.length === 0) {
+        videoGrid.innerHTML = '<div class="empty-state"><p>No videos found. Start by adding some in the Admin Panel.</p></div>';
         return;
     }
 
     videoGrid.innerHTML = videos.map(video => `
-        <div class="video-card" data-title="${video.title.toLowerCase()}" data-hobby="${(video.hobby || '').toLowerCase()}">
+        <div class="video-card" data-title="${(video.title || '').toLowerCase()}" data-hobby="${(video.hobby || '').toLowerCase()}">
             <div class="video-thumb">
                 ${getEmbedHtml(video.url)}
             </div>
             <div class="video-info">
-                <h3>${video.title}</h3>
+                <h3>${video.title || 'Untitled'}</h3>
                 ${video.hobby ? `<span class="hobby-tag">${video.hobby}</span>` : ''}
                 <div class="card-actions">
                     <a href="${video.url}" target="_blank" class="live-btn">Live URL</a>
@@ -158,18 +172,8 @@ function renderVideos(videos) {
 }
 
 function getEmbedHtml(url) {
-    // Basic logic to convert URLs to embeds for common providers
-    // If it's already an iframe string, return it (careful with XSS in production)
+    if (!url) return '';
     if (url.includes('<iframe')) return url;
-
-    // Simple embed logic for Xhamster, SpankBang, etc. (Generic iframe fallback)
-    // Adult sites often use /embed/ in their URLs
-    if (!url.includes('embed') && (url.includes('xhamster') || url.includes('spankbang') || url.includes('xvideos'))) {
-        // This is a heuristic, real sites vary. 
-        // Best practice: Enter the actual embed URL in the dashboard.
-        return `<iframe src="${url}" allowfullscreen></iframe>`;
-    }
-
     return `<iframe src="${url}" allowfullscreen></iframe>`;
 }
 
@@ -179,7 +183,7 @@ videoForm.addEventListener('submit', async (e) => {
     const title = document.getElementById('video-title').value;
     const hobby = document.getElementById('video-hobby').value;
 
-    const { error } = await supabase
+    const { error } = await db
         .from('videos')
         .insert([{ url, title, hobby }]);
 
@@ -194,7 +198,7 @@ videoForm.addEventListener('submit', async (e) => {
 async function deleteVideo(id) {
     if (!confirm('Are you sure you want to delete this video?')) return;
 
-    const { error } = await supabase
+    const { error } = await db
         .from('videos')
         .delete()
         .eq('id', id);
@@ -206,7 +210,7 @@ async function deleteVideo(id) {
     }
 }
 
-// Global exposure for delete function
+// Global exposure
 window.deleteVideo = deleteVideo;
 
 // --- UI Logic ---
@@ -221,8 +225,8 @@ searchInput.addEventListener('input', (e) => {
     const cards = document.querySelectorAll('.video-card');
 
     cards.forEach(card => {
-        const title = card.getAttribute('data-title');
-        const hobby = card.getAttribute('data-hobby');
+        const title = card.getAttribute('data-title') || '';
+        const hobby = card.getAttribute('data-hobby') || '';
         if (title.includes(term) || hobby.includes(term)) {
             card.style.display = 'block';
         } else {
