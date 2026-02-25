@@ -166,15 +166,23 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        // Use provided thumbnail OR predicted one
-        const thumbnail = video.thumbnail_url || predictThumbnail(video.url);
+        // Apply Smart Proxy to Predicted or Provided Thumbnails
+        let thumbnail = video.thumbnail_url || predictThumbnail(video.url);
+
+        // Proxy logic: Use weserv.nl to bypass local ISP blocking for images
+        if (thumbnail && !thumbnail.includes('images.weserv.nl')) {
+            const encodedUrl = encodeURIComponent(thumbnail.replace(/^https?:\/\//, ''));
+            thumbnail = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
+        }
+
         const hasThumb = thumbnail && thumbnail !== '';
 
         return `
-        <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}" data-hobby="">
+        <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
             <div class="video-thumb" id="thumb-${video.id}">
                 ${hasThumb ?
-                `<img src="${thumbnail}" class="video-poster" onerror="this.src='https://placehold.co/600x400/100b1a/white?text=Preview+Blocked'">
+                `<img src="${thumbnail}" class="video-poster" 
+                          onerror="handleBrokenImage(this, '${video.url}')">
                      <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
                         <span class="play-icon">▶</span>
                         <p>Click to Preview</p>
@@ -194,6 +202,20 @@ function renderVideos(videos) {
     `}).join('');
 }
 
+// Handle images that still fail despite proxy (User probably needs VPN for the actual embed too)
+function handleBrokenImage(img, originalUrl) {
+    const parent = img.parentElement;
+    parent.classList.add('broken-stream');
+    parent.innerHTML = `
+        <div class="vpn-warning">
+            <span>🚫</span>
+            <p>Access Blocked</p>
+            <small>VPN may be required for this video</small>
+            <a href="${originalUrl}" target="_blank" class="mini-btn">Watch on Site</a>
+        </div>
+    `;
+}
+
 function loadEmbed(id, url) {
     const container = document.getElementById(`thumb-${id}`);
     if (container) {
@@ -201,7 +223,7 @@ function loadEmbed(id, url) {
     }
 }
 
-// Logic to convert main URL to embed format and generate thumbnails
+// Logic to convert main URL to embed format
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
@@ -233,11 +255,9 @@ function predictThumbnail(url) {
     if (url.includes('xhamster')) {
         const id = getXHId(url);
         if (id) {
-            // Predict thumbnail using xHamster's common image patterns
             return `https://ic.xhcdn.com/videos/thumbnails/${id}/1.jpg`;
         }
     }
-    // Add more providers here if patterns are known
     return '';
 }
 
@@ -263,9 +283,7 @@ videoForm.addEventListener('submit', async (e) => {
     const thumbnail_url = document.getElementById('video-thumbnail').value;
     const title = extractTitleFromUrl(url);
 
-    console.log("Vault: Adding video with auto-title:", title);
-
-    const { error } = await db
+    let { error } = await db
         .from('videos')
         .insert([{ url, title, thumbnail_url }]);
 
@@ -273,13 +291,15 @@ videoForm.addEventListener('submit', async (e) => {
         const { error: fallbackError } = await db
             .from('videos')
             .insert([{ url, title }]);
-        if (fallbackError) alert('Error: ' + fallbackError.message);
-    } else if (error) {
-        alert('Error adding video: ' + error.message);
+        error = fallbackError;
     }
 
-    videoForm.reset();
-    loadVideos();
+    if (error) {
+        alert('Error adding video: ' + error.message);
+    } else {
+        videoForm.reset();
+        loadVideos();
+    }
 });
 
 async function deleteVideo(id) {
@@ -300,6 +320,7 @@ async function deleteVideo(id) {
 // Global exposure
 window.deleteVideo = deleteVideo;
 window.loadEmbed = loadEmbed;
+window.handleBrokenImage = handleBrokenImage;
 
 // --- UI Logic ---
 showAdminBtn.addEventListener('click', () => {
