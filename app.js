@@ -1,6 +1,6 @@
 // Initialize Supabase
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-console.log("Vault: Connecting to Supabase...");
+console.log("Vault: Simple Direct-Link Mode Active.");
 
 // State Management
 let currentPassword = localStorage.getItem('vault_password') || '';
@@ -27,18 +27,13 @@ const thumbInput = document.getElementById('video-thumbnail');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Vault: Init Started");
     try {
         await checkAuth();
     } catch (err) {
         console.error("Vault: Init Error:", err);
     }
-    hideLoader();
-});
-
-function hideLoader() {
     if (loader) loader.classList.add('hidden');
-}
+});
 
 // --- Auth Functions ---
 async function checkAuth() {
@@ -161,11 +156,10 @@ if (screenshotUpload) {
 
             if (thumbInput) thumbInput.value = publicUrl;
             if (uploadStatus) uploadStatus.textContent = '✅ Success!';
-            console.log("Vault: Upload Success:", publicUrl);
         } catch (err) {
             console.error("Vault: Upload Error:", err);
             if (uploadStatus) uploadStatus.textContent = '❌ Failed';
-            alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists, is Public, and has an "All Access" policy.');
+            alert('Upload Error: ' + err.message);
         }
     });
 }
@@ -178,16 +172,8 @@ async function loadVideos() {
             .select('*')
             .order('created_at', { ascending: false });
 
-        if (error) {
-            if (error.message.includes('thumbnail_url')) {
-                const { data: fallbackData } = await db.from('videos').select('id, url, title, created_at').order('created_at', { ascending: false });
-                if (fallbackData) renderVideos(fallbackData);
-            } else {
-                throw error;
-            }
-        } else {
-            renderVideos(data);
-        }
+        if (error) throw error;
+        renderVideos(data);
     } catch (err) {
         console.error('Vault: Load Error:', err);
     }
@@ -200,89 +186,28 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        const manualThumb = video.thumbnail_url && video.thumbnail_url.trim() !== '';
-        const predictedThumb = !manualThumb ? predictThumbnail(video.url) : null;
-
-        let thumbUrl = manualThumb ? video.thumbnail_url : predictedThumb;
-
-        // GLOBAL PROXY: Use weserv.nl for ALL thumbnails to ensure they load even under ISP blocking
-        // We bypass only data URLs or URLs already proxied
-        if (thumbUrl && !thumbUrl.includes('images.weserv.nl') && !thumbUrl.startsWith('data:')) {
-            const cleanUrl = thumbUrl.replace(/^https?:\/\//, '');
-            thumbUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&n=-1`;
-        }
+        // Simple Logic: Always show image (provided or placeholder) and REDIRECT on click
+        const hasThumb = video.thumbnail_url && video.thumbnail_url.trim() !== '';
+        const displayImg = hasThumb ? video.thumbnail_url : 'https://placehold.co/600x400/9D4EDD/ffffff?text=Click+to+Watch';
 
         return `
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
-            <div class="video-thumb" id="thumb-${video.id}">
-                ${thumbUrl ?
-                `<img src="${thumbUrl}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
-                     <div class="play-overlay" onclick="${manualThumb ? `window.open('${video.url}', '_blank')` : `loadEmbed('${video.id}', '${video.url}')`}">
-                        <span class="play-icon">${manualThumb ? '🔗' : '▶'}</span>
-                        <p>${manualThumb ? 'Open Redirect URL' : 'Watch in Vault'}</p>
-                     </div>`
-                : getEmbedHtml(video.url)
-            }
+            <div class="video-thumb" id="thumb-${video.id}" onclick="window.open('${video.url}', '_blank')">
+                <img src="${displayImg}" class="video-poster" onerror="this.src='https://placehold.co/600x400/9D4EDD/ffffff?text=Video+Link'">
+                <div class="play-overlay">
+                    <span class="play-icon">🔗</span>
+                    <p>Open Video</p>
+                </div>
             </div>
             <div class="video-info">
                 <h3>${video.title || 'Untitled'}</h3>
                 <div class="card-actions">
-                    <a href="${video.url}" target="_blank" class="live-btn">Open Live URL</a>
+                    <a href="${video.url}" target="_blank" class="live-btn">Open Link</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
-                    ${manualThumb ? '' : `<button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Try Embed</button>`}
                 </div>
             </div>
         </div>
     `}).join('');
-}
-
-function handleBrokenImage(img, originalUrl) {
-    console.warn("Vault: Image failed to load, applying fallback UI", img.src);
-    const parent = img.parentElement;
-    parent.classList.add('broken-stream');
-    parent.innerHTML = `
-        <div class="vpn-warning">
-            <span>🚫</span>
-            <p>Admin Thumbnail Blocked</p>
-            <small>ISP or Adblocker may be blocking this image. Try VPN.</small>
-            <a href="${originalUrl}" target="_blank" class="mini-btn">Watch Direct</a>
-        </div>
-    `;
-}
-
-function loadEmbed(id, url) {
-    const container = document.getElementById(`thumb-${id}`);
-    if (container) {
-        container.innerHTML = getEmbedHtml(url);
-    }
-}
-
-function getEmbedHtml(url) {
-    if (!url) return '';
-    if (url.includes('<iframe')) return url;
-
-    let finalUrl = url;
-    if (url.includes('xhamster')) {
-        const id = getXHId(url);
-        if (id) finalUrl = `https://xhamster.com/embed/${id}`;
-    } else if (url.includes('spankbang.com')) {
-        const match = url.match(/\/video\/([a-z0-9]+)/i);
-        if (match) finalUrl = `https://spankbang.com/${match[1]}/embed/`;
-    }
-    return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
-}
-
-function getXHId(url) {
-    const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
-    return match ? (match[2] || match[1]) : null;
-}
-
-function predictThumbnail(url) {
-    if (url.includes('xhamster')) {
-        const id = getXHId(url);
-        if (id) return `https://ic.xhcdn.com/videos/thumbnails/${id}/1.jpg`;
-    }
-    return '';
 }
 
 function extractTitleFromUrl(url) {
@@ -306,12 +231,7 @@ if (videoForm) {
         const title = extractTitleFromUrl(url);
 
         try {
-            let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
-            if (error && error.message.includes('thumbnail_url')) {
-                // Fallback for missing column - at least save the video
-                const { error: fallbackError } = await db.from('videos').insert([{ url, title }]);
-                error = fallbackError;
-            }
+            const { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
             if (error) throw error;
             videoForm.reset();
             if (uploadStatus) uploadStatus.textContent = '';
@@ -331,8 +251,6 @@ async function deleteVideo(id) {
 }
 
 window.deleteVideo = deleteVideo;
-window.loadEmbed = loadEmbed;
-window.handleBrokenImage = handleBrokenImage;
 
 if (showAdminBtn) {
     showAdminBtn.addEventListener('click', () => {
