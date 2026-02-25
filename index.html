@@ -47,9 +47,13 @@
                 <h2>Manage Videos</h2>
                 <form id="video-form" class="video-form">
                     <div class="grid-form">
-                        <input type="text" id="video-url" placeholder="Paste Video URL (e.g. xhamster, spankbang...)"
+                        <input type="text" id="video-url" placeholder="Paste Video URL (xHamster, SpankBang...)"
                             required>
-                        <input type="text" id="video-thumbnail" placeholder="Thumbnail URL (Optional)">
+                        <div class="input-with-hint">
+                            <input type="text" id="video-thumbnail" placeholder="Custom Thumbnail URL (Optional)">
+                            <small class="hint">No Preview? Upload a screenshot to <a href="https://imgbb.com/"
+                                    target="_blank">ImgBB</a> and paste the link here.</small>
+                        </div>
                         <button type="submit" id="submit-video">Add Video</button>
                     </div>
                 </form>
