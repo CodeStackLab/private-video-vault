@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Video Vault</title>
+    <meta name="description" content="Securely manage and view private video URLs with a premium dashboard.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dark-theme">
+    <div id="loader" class="loader-container">
+        <div class="spinner"></div>
+    </div>
+
+    <div id="auth-screen" class="glass-container auth-page hidden">
+        <div class="auth-card">
+            <h1>Private Vault</h1>
+            <p>Enter password to unlock videos</p>
+            <div class="input-group">
+                <input type="password" id="admin-password" placeholder="Passphrase..." autocomplete="current-password">
+                <button id="unlock-btn">Unlock</button>
+            </div>
+            <p id="auth-error" class="error-msg hidden">Incorrect password. Please try again.</p>
+        </div>
+    </div>
+
+    <main id="main-content" class="hidden">
+        <header class="glass-nav">
+            <div class="nav-content">
+                <div class="logo">VAULT<span>.</span></div>
+                <div class="nav-actions">
+                    <button id="show-admin-btn" class="secondary-btn">Admin Panel</button>
+                    <button id="logout-btn" class="logout-btn">Lock</button>
+                </div>
+            </div>
+        </header>
+
+        <section id="admin-panel" class="admin-section hidden">
+            <div class="glass-card">
+                <h2>Manage Videos</h2>
+                <form id="video-form" class="video-form">
+                    <div class="grid-form">
+                        <input type="text" id="video-url" placeholder="Video URL (Embed or Direct)" required>
+                        <input type="text" id="video-title" placeholder="Title" required>
+                        <input type="text" id="video-hobby" placeholder="Category/Hobby">
+                        <button type="submit" id="submit-video">Add Video</button>
+                    </div>
+                </form>
+                <div id="preview-container" class="preview-box hidden">
+                    <h3>Preview</h3>
+                    <div id="video-preview"></div>
+                </div>
+            </div>
+            
+            <div class="glass-card password-settings">
+                <h3>Settings</h3>
+                <div class="input-group">
+                    <input type="password" id="new-password" placeholder="New Password">
+                    <button id="update-password-btn">Update Password</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="listing-section" class="listing-section">
+            <div class="section-header">
+                <h2>Private Collection</h2>
+                <div class="filter-bar">
+                    <input type="text" id="search-input" placeholder="Search by name or hobby...">
+                </div>
+            </div>
+            <div id="video-grid" class="video-grid">
+                <!-- Videos will be injected here -->
+                <div class="empty-state">
+                    <p>No videos found. Start by adding some in the Admin Panel.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
