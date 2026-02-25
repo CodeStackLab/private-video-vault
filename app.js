@@ -1,6 +1,6 @@
 // Initialize Supabase
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-console.log("Vault: Connecting to Supabase...", SUPABASE_URL);
+console.log("Vault: Connecting to Supabase...");
 
 // State Management
 let currentPassword = localStorage.getItem('vault_password') || '';
@@ -27,7 +27,7 @@ const thumbInput = document.getElementById('video-thumbnail');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Vault: DOM Loaded");
+    console.log("Vault: Init Started");
     try {
         await checkAuth();
     } catch (err) {
@@ -142,7 +142,7 @@ if (screenshotUpload) {
         const file = e.target.files[0];
         if (!file) return;
 
-        uploadStatus.textContent = '⏳ Uploading...';
+        if (uploadStatus) uploadStatus.textContent = '⏳ Uploading...';
 
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
@@ -159,12 +159,13 @@ if (screenshotUpload) {
                 .from('thumbnails')
                 .getPublicUrl(filePath);
 
-            thumbInput.value = publicUrl;
-            uploadStatus.textContent = '✅ Success!';
+            if (thumbInput) thumbInput.value = publicUrl;
+            if (uploadStatus) uploadStatus.textContent = '✅ Success!';
+            console.log("Vault: Upload Success:", publicUrl);
         } catch (err) {
             console.error("Vault: Upload Error:", err);
-            uploadStatus.textContent = '❌ Failed';
-            alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists and is Public.');
+            if (uploadStatus) uploadStatus.textContent = '❌ Failed';
+            alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists, is Public, and has an "All Access" policy.');
         }
     });
 }
@@ -199,38 +200,28 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        // PRIORITY LOGIC:
-        // 1. If manual thumbnail exists -> Always show image and REDIRECT on click.
-        // 2. If no manual thumb -> Try predicted thumb and EMBED on click.
-        // 3. Else -> Show Embed player directly.
-
         const manualThumb = video.thumbnail_url && video.thumbnail_url.trim() !== '';
         const predictedThumb = !manualThumb ? predictThumbnail(video.url) : null;
 
-        let displayImg = manualThumb ? video.thumbnail_url : predictedThumb;
+        let thumbUrl = manualThumb ? video.thumbnail_url : predictedThumb;
 
-        // Proxy logic for predicted thumbs (manual thumbs are usually trusted Supabase or user URLs)
-        if (displayImg && !manualThumb && !displayImg.includes('images.weserv.nl') && !displayImg.includes('supabase.co')) {
-            const encodedUrl = encodeURIComponent(displayImg.replace(/^https?:\/\//, ''));
-            displayImg = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
+        // GLOBAL PROXY: Use weserv.nl for ALL thumbnails to ensure they load even under ISP blocking
+        // We bypass only data URLs or URLs already proxied
+        if (thumbUrl && !thumbUrl.includes('images.weserv.nl') && !thumbUrl.startsWith('data:')) {
+            const cleanUrl = thumbUrl.replace(/^https?:\/\//, '');
+            thumbUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&n=-1`;
         }
 
         return `
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
             <div class="video-thumb" id="thumb-${video.id}">
-                ${manualThumb ?
-                `<img src="${video.thumbnail_url}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
-                     <div class="play-overlay" onclick="window.open('${video.url}', '_blank')">
-                        <span class="play-icon">🔗</span>
-                        <p>Open Redirect URL</p>
+                ${thumbUrl ?
+                `<img src="${thumbUrl}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
+                     <div class="play-overlay" onclick="${manualThumb ? `window.open('${video.url}', '_blank')` : `loadEmbed('${video.id}', '${video.url}')`}">
+                        <span class="play-icon">${manualThumb ? '🔗' : '▶'}</span>
+                        <p>${manualThumb ? 'Open Redirect URL' : 'Watch in Vault'}</p>
                      </div>`
-                : predictedThumb ?
-                    `<img src="${displayImg}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
-                     <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
-                        <span class="play-icon">▶</span>
-                        <p>Watch in Vault</p>
-                     </div>`
-                    : getEmbedHtml(video.url)
+                : getEmbedHtml(video.url)
             }
             </div>
             <div class="video-info">
@@ -246,21 +237,24 @@ function renderVideos(videos) {
 }
 
 function handleBrokenImage(img, originalUrl) {
+    console.warn("Vault: Image failed to load, applying fallback UI", img.src);
     const parent = img.parentElement;
     parent.classList.add('broken-stream');
     parent.innerHTML = `
         <div class="vpn-warning">
             <span>🚫</span>
-            <p>Access Blocked</p>
-            <small>VPN may be required</small>
-            <a href="${originalUrl}" target="_blank" class="mini-btn">Watch on Site</a>
+            <p>Admin Thumbnail Blocked</p>
+            <small>ISP or Adblocker may be blocking this image. Try VPN.</small>
+            <a href="${originalUrl}" target="_blank" class="mini-btn">Watch Direct</a>
         </div>
     `;
 }
 
 function loadEmbed(id, url) {
     const container = document.getElementById(`thumb-${id}`);
-    if (container) container.innerHTML = getEmbedHtml(url);
+    if (container) {
+        container.innerHTML = getEmbedHtml(url);
+    }
 }
 
 function getEmbedHtml(url) {
@@ -308,12 +302,13 @@ if (videoForm) {
         e.preventDefault();
         const urlInput = document.getElementById('video-url');
         const url = urlInput.value;
-        const thumbnail_url = thumbInput.value;
+        const thumbnail_url = thumbInput ? thumbInput.value : '';
         const title = extractTitleFromUrl(url);
 
         try {
             let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
             if (error && error.message.includes('thumbnail_url')) {
+                // Fallback for missing column - at least save the video
                 const { error: fallbackError } = await db.from('videos').insert([{ url, title }]);
                 error = fallbackError;
             }
@@ -342,7 +337,7 @@ window.handleBrokenImage = handleBrokenImage;
 if (showAdminBtn) {
     showAdminBtn.addEventListener('click', () => {
         isAdminVisible = !isAdminVisible;
-        adminPanel.classList.toggle('hidden');
+        if (adminPanel) adminPanel.classList.toggle('hidden');
         showAdminBtn.textContent = isAdminVisible ? 'Hide Admin' : 'Admin Panel';
     });
 }
