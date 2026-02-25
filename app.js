@@ -4,7 +4,6 @@ console.log("Vault: Connecting to Supabase...", SUPABASE_URL);
 
 // State Management
 let currentPassword = localStorage.getItem('vault_password') || '';
-let imgbbApiKey = localStorage.getItem('imgbb_api_key') || '';
 let isAdminVisible = false;
 
 // DOM Elements
@@ -22,8 +21,6 @@ const adminPanel = document.getElementById('admin-panel');
 const searchInput = document.getElementById('search-input');
 const updatePasswordBtn = document.getElementById('update-password-btn');
 const newPasswordInput = document.getElementById('new-password');
-const imgbbKeyInput = document.getElementById('imgbb-api-key');
-const saveKeysBtn = document.getElementById('save-api-keys-btn');
 const screenshotUpload = document.getElementById('screenshot-upload');
 const uploadStatus = document.getElementById('upload-status');
 const thumbInput = document.getElementById('video-thumbnail');
@@ -31,7 +28,6 @@ const thumbInput = document.getElementById('video-thumbnail');
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("Vault: DOM Loaded");
-    if (imgbbKeyInput) imgbbKeyInput.value = imgbbApiKey;
     try {
         await checkAuth();
     } catch (err) {
@@ -134,46 +130,37 @@ updatePasswordBtn.addEventListener('click', async () => {
     }
 });
 
-saveKeysBtn.addEventListener('click', () => {
-    const key = imgbbKeyInput.value.trim();
-    localStorage.setItem('imgbb_api_key', key);
-    imgbbApiKey = key;
-    alert('API Key saved locally!');
-});
-
-// --- ImgBB Upload Logic ---
+// --- Supabase Storage Upload Logic ---
 screenshotUpload.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!imgbbApiKey) {
-        alert('Please save your ImgBB API Key in settings first!');
-        return;
-    }
-
     uploadStatus.textContent = '⏳ Uploading...';
 
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('key', imgbbApiKey);
+    // Generate a unique file name
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
 
     try {
-        const response = await fetch('https://api.imgbb.com/1/upload', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
+        // Upload to 'thumbnails' bucket
+        const { data, error } = await db.storage
+            .from('thumbnails')
+            .upload(filePath, file);
 
-        if (data.success) {
-            thumbInput.value = data.data.url;
-            uploadStatus.textContent = '✅ Success!';
-        } else {
-            throw new Error(data.error.message);
-        }
+        if (error) throw error;
+
+        // Get Public URL
+        const { data: { publicUrl } } = db.storage
+            .from('thumbnails')
+            .getPublicUrl(filePath);
+
+        thumbInput.value = publicUrl;
+        uploadStatus.textContent = '✅ Success!';
     } catch (err) {
         console.error("Vault: Upload Error:", err);
         uploadStatus.textContent = '❌ Failed';
-        alert('Upload Error: ' + err.message);
+        alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists and is Public.');
     }
 });
 
@@ -208,7 +195,10 @@ function renderVideos(videos) {
 
     videoGrid.innerHTML = videos.map(video => {
         let thumbnail = video.thumbnail_url || predictThumbnail(video.url);
-        if (thumbnail && !thumbnail.includes('images.weserv.nl')) {
+
+        // Proxy logic: Use weserv.nl to bypass local ISP blocking for images
+        // We only proxy if it's NOT a Supabase storage URL (which is already reliable)
+        if (thumbnail && !thumbnail.includes('images.weserv.nl') && !thumbnail.includes('supabase.co')) {
             const encodedUrl = encodeURIComponent(thumbnail.replace(/^https?:\/\//, ''));
             thumbnail = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
         }
