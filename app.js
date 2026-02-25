@@ -138,20 +138,17 @@ if (screenshotUpload) {
 
         uploadStatus.textContent = '⏳ Uploading...';
 
-        // Generate a unique file name
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
         const filePath = `${fileName}`;
 
         try {
-            // Upload to 'thumbnails' bucket
             const { data, error } = await db.storage
                 .from('thumbnails')
                 .upload(filePath, file);
 
             if (error) throw error;
 
-            // Get Public URL
             const { data: { publicUrl } } = db.storage
                 .from('thumbnails')
                 .getPublicUrl(filePath);
@@ -196,25 +193,28 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        let thumbnail = video.thumbnail_url || predictThumbnail(video.url);
+        // DETECT: Manual Thumbnail (Uploaded or Pasted) vs Predicted Thumbnail
+        const manualThumb = video.thumbnail_url && video.thumbnail_url !== '';
+        const predictedThumb = !manualThumb ? predictThumbnail(video.url) : null;
 
-        // Proxy logic: Use weserv.nl to bypass local ISP blocking for images
-        // We only proxy if it's NOT a Supabase storage URL (which is already reliable)
-        if (thumbnail && !thumbnail.includes('images.weserv.nl') && !thumbnail.includes('supabase.co')) {
-            const encodedUrl = encodeURIComponent(thumbnail.replace(/^https?:\/\//, ''));
-            thumbnail = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
+        let displayImg = manualThumb ? video.thumbnail_url : predictedThumb;
+
+        // Proxy logic: Use weserv.nl for predicted thumbs if needed
+        if (displayImg && !manualThumb && !displayImg.includes('images.weserv.nl') && !displayImg.includes('supabase.co')) {
+            const encodedUrl = encodeURIComponent(displayImg.replace(/^https?:\/\//, ''));
+            displayImg = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
         }
 
-        const hasThumb = thumbnail && thumbnail !== '';
+        const hasAnyImage = displayImg && displayImg !== '';
 
         return `
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
             <div class="video-thumb" id="thumb-${video.id}">
-                ${hasThumb ?
-                `<img src="${thumbnail}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
-                     <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
-                        <span class="play-icon">▶</span>
-                        <p>Click to Preview</p>
+                ${hasAnyImage ?
+                `<img src="${displayImg}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
+                     <div class="play-overlay" onclick="${manualThumb ? `window.open('${video.url}', '_blank')` : `loadEmbed('${video.id}', '${video.url}')`}">
+                        <span class="play-icon">${manualThumb ? '🔗' : '▶'}</span>
+                        <p>${manualThumb ? 'Open Live URL' : 'Click to Load Embed'}</p>
                      </div>`
                 : getEmbedHtml(video.url)
             }
@@ -224,7 +224,7 @@ function renderVideos(videos) {
                 <div class="card-actions">
                     <a href="${video.url}" target="_blank" class="live-btn">Open Live URL</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
-                    <button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Try Embed</button>
+                    <button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Force Embed</button>
                 </div>
             </div>
         </div>
