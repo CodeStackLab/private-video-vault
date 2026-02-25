@@ -231,14 +231,24 @@ if (videoForm) {
         const title = extractTitleFromUrl(url);
 
         try {
-            const { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
+            // Attempt to save with thumbnail
+            let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
+
+            // If the column is missing in Supabase, retry without it
+            if (error && error.message.includes('thumbnail_url')) {
+                console.warn("Vault: 'thumbnail_url' column missing in Supabase. Retrying without it.");
+                const { error: retryError } = await db.from('videos').insert([{ url, title }]);
+                error = retryError;
+            }
+
             if (error) throw error;
+
             videoForm.reset();
             if (uploadStatus) uploadStatus.textContent = '';
             loadVideos();
         } catch (err) {
             console.error("Vault: Save Error:", err);
-            alert("Failed to save: " + err.message);
+            alert("Database Error: " + err.message + "\n\nTip: You need to add the 'thumbnail_url' column in Supabase SQL Editor. See SUPABASE_SETUP.md");
         }
     });
 }
