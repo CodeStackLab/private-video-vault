@@ -50,9 +50,16 @@
                         <input type="text" id="video-url" placeholder="Paste Video URL (xHamster, SpankBang...)"
                             required>
                         <div class="input-with-hint">
-                            <input type="text" id="video-thumbnail" placeholder="Custom Thumbnail URL (Optional)">
-                            <small class="hint">No Preview? Upload a screenshot to <a href="https://imgbb.com/"
-                                    target="_blank">ImgBB</a> and paste the link here.</small>
+                            <input type="text" id="video-thumbnail" placeholder="Thumbnail URL (Optional)">
+                            <div class="upload-row">
+                                <label for="screenshot-upload" class="upload-btn">
+                                    <span>📁</span> Upload Screenshot
+                                </label>
+                                <input type="file" id="screenshot-upload" accept="image/*" hidden>
+                                <span id="upload-status"></span>
+                            </div>
+                            <small class="hint">Tip: Use <strong>Upload Screenshot</strong> to add a direct preview from
+                                your device.</small>
                         </div>
                         <button type="submit" id="submit-video">Add Video</button>
                     </div>

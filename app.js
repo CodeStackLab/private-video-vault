@@ -131,38 +131,40 @@ updatePasswordBtn.addEventListener('click', async () => {
 });
 
 // --- Supabase Storage Upload Logic ---
-screenshotUpload.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+if (screenshotUpload) {
+    screenshotUpload.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-    uploadStatus.textContent = '⏳ Uploading...';
+        uploadStatus.textContent = '⏳ Uploading...';
 
-    // Generate a unique file name
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
+        // Generate a unique file name
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
 
-    try {
-        // Upload to 'thumbnails' bucket
-        const { data, error } = await db.storage
-            .from('thumbnails')
-            .upload(filePath, file);
+        try {
+            // Upload to 'thumbnails' bucket
+            const { data, error } = await db.storage
+                .from('thumbnails')
+                .upload(filePath, file);
 
-        if (error) throw error;
+            if (error) throw error;
 
-        // Get Public URL
-        const { data: { publicUrl } } = db.storage
-            .from('thumbnails')
-            .getPublicUrl(filePath);
+            // Get Public URL
+            const { data: { publicUrl } } = db.storage
+                .from('thumbnails')
+                .getPublicUrl(filePath);
 
-        thumbInput.value = publicUrl;
-        uploadStatus.textContent = '✅ Success!';
-    } catch (err) {
-        console.error("Vault: Upload Error:", err);
-        uploadStatus.textContent = '❌ Failed';
-        alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists and is Public.');
-    }
-});
+            thumbInput.value = publicUrl;
+            uploadStatus.textContent = '✅ Success!';
+        } catch (err) {
+            console.error("Vault: Upload Error:", err);
+            uploadStatus.textContent = '❌ Failed';
+            alert('Upload Error: ' + err.message + '\n\nMake sure your "thumbnails" bucket exists and is Public.');
+        }
+    });
+}
 
 // --- Video Functions ---
 async function loadVideos() {
@@ -287,27 +289,29 @@ function extractTitleFromUrl(url) {
     }
 }
 
-videoForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const url = document.getElementById('video-url').value;
-    const thumbnail_url = thumbInput.value;
-    const title = extractTitleFromUrl(url);
+if (videoForm) {
+    videoForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = document.getElementById('video-url').value;
+        const thumbnail_url = thumbInput.value;
+        const title = extractTitleFromUrl(url);
 
-    try {
-        let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
-        if (error && error.message.includes('thumbnail_url')) {
-            const { error: fallbackError } = await db.from('videos').insert([{ url, title }]);
-            error = fallbackError;
+        try {
+            let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
+            if (error && error.message.includes('thumbnail_url')) {
+                const { error: fallbackError } = await db.from('videos').insert([{ url, title }]);
+                error = fallbackError;
+            }
+            if (error) throw error;
+            videoForm.reset();
+            uploadStatus.textContent = '';
+            loadVideos();
+        } catch (err) {
+            console.error("Vault: Save Error:", err);
+            alert("Failed to save: " + err.message);
         }
-        if (error) throw error;
-        videoForm.reset();
-        uploadStatus.textContent = '';
-        loadVideos();
-    } catch (err) {
-        console.error("Vault: Save Error:", err);
-        alert("Failed to save: " + err.message);
-    }
-});
+    });
+}
 
 async function deleteVideo(id) {
     if (!confirm('Are you sure?')) return;
@@ -320,16 +324,20 @@ window.deleteVideo = deleteVideo;
 window.loadEmbed = loadEmbed;
 window.handleBrokenImage = handleBrokenImage;
 
-showAdminBtn.addEventListener('click', () => {
-    isAdminVisible = !isAdminVisible;
-    adminPanel.classList.toggle('hidden');
-    showAdminBtn.textContent = isAdminVisible ? 'Hide Admin' : 'Admin Panel';
-});
-
-searchInput.addEventListener('input', (e) => {
-    const term = e.target.value.toLowerCase();
-    document.querySelectorAll('.video-card').forEach(card => {
-        const title = card.getAttribute('data-title') || '';
-        card.style.display = title.includes(term) ? 'block' : 'none';
+if (showAdminBtn) {
+    showAdminBtn.addEventListener('click', () => {
+        isAdminVisible = !isAdminVisible;
+        adminPanel.classList.toggle('hidden');
+        showAdminBtn.textContent = isAdminVisible ? 'Hide Admin' : 'Admin Panel';
     });
-});
+}
+
+if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+        const term = e.target.value.toLowerCase();
+        document.querySelectorAll('.video-card').forEach(card => {
+            const title = card.getAttribute('data-title') || '';
+            card.style.display = title.includes(term) ? 'block' : 'none';
+        });
+    });
+}
