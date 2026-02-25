@@ -176,9 +176,10 @@ button:hover {
 
 .grid-form {
     display: grid;
-    grid-template-columns: 2fr 1fr auto;
+    grid-template-columns: 1.5fr 1.5fr auto;
     gap: 15px;
     margin-top: 20px;
+    align-items: flex-start;
 }
 
 .input-with-hint {
@@ -200,6 +201,36 @@ button:hover {
 
 .hint a:hover {
     text-decoration: underline;
+}
+
+.upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.upload-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px dashed var(--glass-border);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.upload-btn:hover {
+    background: rgba(157, 78, 221, 0.1);
+    border-color: var(--primary);
+}
+
+#upload-status {
+    font-size: 0.7rem;
+    color: var(--primary);
 }
 
 /* Video Grid */

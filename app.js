@@ -4,6 +4,7 @@ console.log("Vault: Connecting to Supabase...", SUPABASE_URL);
 
 // State Management
 let currentPassword = localStorage.getItem('vault_password') || '';
+let imgbbApiKey = localStorage.getItem('imgbb_api_key') || '';
 let isAdminVisible = false;
 
 // DOM Elements
@@ -21,10 +22,16 @@ const adminPanel = document.getElementById('admin-panel');
 const searchInput = document.getElementById('search-input');
 const updatePasswordBtn = document.getElementById('update-password-btn');
 const newPasswordInput = document.getElementById('new-password');
+const imgbbKeyInput = document.getElementById('imgbb-api-key');
+const saveKeysBtn = document.getElementById('save-api-keys-btn');
+const screenshotUpload = document.getElementById('screenshot-upload');
+const uploadStatus = document.getElementById('upload-status');
+const thumbInput = document.getElementById('video-thumbnail');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("Vault: DOM Loaded");
+    if (imgbbKeyInput) imgbbKeyInput.value = imgbbApiKey;
     try {
         await checkAuth();
     } catch (err) {
@@ -40,24 +47,25 @@ function hideLoader() {
 // --- Auth Functions ---
 async function checkAuth() {
     if (!currentPassword) {
-        console.log("Vault: No password found in storage");
         showAuthScreen();
         return;
     }
 
-    // Verify password against Supabase settings table
-    const { data, error } = await db
-        .from('settings')
-        .select('admin_password')
-        .single();
+    try {
+        const { data, error } = await db
+            .from('settings')
+            .select('admin_password')
+            .single();
 
-    if (error || !data || data.admin_password !== currentPassword) {
-        console.log("Vault: Auth Failed or Password Reset Required");
+        if (error || !data || data.admin_password !== currentPassword) {
+            showAuthScreen();
+        } else {
+            showMainContent();
+            loadVideos();
+        }
+    } catch (err) {
+        console.error("Vault: Auth Fetch Error:", err);
         showAuthScreen();
-    } else {
-        console.log("Vault: Auth Success");
-        showMainContent();
-        loadVideos();
     }
 }
 
@@ -75,36 +83,30 @@ unlockBtn.addEventListener('click', async () => {
     const pwd = adminPasswordInput.value;
     if (!pwd) return;
 
-    console.log("Vault: Attempting unlock...");
-
-    // Check if settings exist, if not, first user sets the password
-    const { data: settings, error: fetchError } = await db
-        .from('settings')
-        .select('admin_password')
-        .single();
-
-    if (fetchError && (fetchError.code === 'PGRST116' || fetchError.message.includes('0 rows'))) {
-        // Table is empty, initialize with this password
-        console.log("Vault: Initializing database with first password");
-        const { error: initError } = await db
+    try {
+        const { data: settings, error: fetchError } = await db
             .from('settings')
-            .insert([{ id: 1, admin_password: pwd }]);
+            .select('admin_password')
+            .single();
 
-        if (initError) {
-            console.error("Vault: Initialization Error:", initError);
-            alert('Error initializing database. Check Supabase RLS policies.');
+        if (fetchError && (fetchError.code === 'PGRST116' || fetchError.message.includes('0 rows'))) {
+            const { error: initError } = await db
+                .from('settings')
+                .insert([{ id: 1, admin_password: pwd }]);
+            if (initError) throw initError;
+        } else if (settings && settings.admin_password !== pwd) {
+            authError.classList.remove('hidden');
             return;
         }
-    } else if (settings && settings.admin_password !== pwd) {
-        console.log("Vault: Wrong password");
-        authError.classList.remove('hidden');
-        return;
-    }
 
-    currentPassword = pwd;
-    localStorage.setItem('vault_password', pwd);
-    showMainContent();
-    loadVideos();
+        currentPassword = pwd;
+        localStorage.setItem('vault_password', pwd);
+        showMainContent();
+        loadVideos();
+    } catch (err) {
+        console.error("Vault: Unlock Error:", err);
+        alert("Connection Error: " + err.message);
+    }
 });
 
 logoutBtn.addEventListener('click', () => {
@@ -123,40 +125,79 @@ updatePasswordBtn.addEventListener('click', async () => {
         .update({ admin_password: newPwd })
         .eq('id', 1);
 
-    if (error) {
-        alert('Failed to update password: ' + error.message);
-    } else {
-        alert('Password updated successfully!');
+    if (error) alert('Error: ' + error.message);
+    else {
+        alert('Password updated!');
         currentPassword = newPwd;
         localStorage.setItem('vault_password', newPwd);
         newPasswordInput.value = '';
     }
 });
 
-// --- Video Functions ---
-async function loadVideos() {
-    const { data, error } = await db
-        .from('videos')
-        .select('*')
-        .order('created_at', { ascending: false });
+saveKeysBtn.addEventListener('click', () => {
+    const key = imgbbKeyInput.value.trim();
+    localStorage.setItem('imgbb_api_key', key);
+    imgbbApiKey = key;
+    alert('API Key saved locally!');
+});
 
-    if (error) {
-        console.error('Vault: Error loading videos:', error);
-        if (error.message.includes('thumbnail_url')) {
-            const { data: fallbackData, error: fallbackError } = await db
-                .from('videos')
-                .select('id, url, title, created_at')
-                .order('created_at', { ascending: false });
+// --- ImgBB Upload Logic ---
+screenshotUpload.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-            if (!fallbackError) {
-                renderVideos(fallbackData);
-                return;
-            }
-        }
+    if (!imgbbApiKey) {
+        alert('Please save your ImgBB API Key in settings first!');
         return;
     }
 
-    renderVideos(data);
+    uploadStatus.textContent = '⏳ Uploading...';
+
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', imgbbApiKey);
+
+    try {
+        const response = await fetch('https://api.imgbb.com/1/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            thumbInput.value = data.data.url;
+            uploadStatus.textContent = '✅ Success!';
+        } else {
+            throw new Error(data.error.message);
+        }
+    } catch (err) {
+        console.error("Vault: Upload Error:", err);
+        uploadStatus.textContent = '❌ Failed';
+        alert('Upload Error: ' + err.message);
+    }
+});
+
+// --- Video Functions ---
+async function loadVideos() {
+    try {
+        const { data, error } = await db
+            .from('videos')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            if (error.message.includes('thumbnail_url')) {
+                const { data: fallbackData } = await db.from('videos').select('id, url, title, created_at').order('created_at', { ascending: false });
+                if (fallbackData) renderVideos(fallbackData);
+            } else {
+                throw error;
+            }
+        } else {
+            renderVideos(data);
+        }
+    } catch (err) {
+        console.error('Vault: Load Error:', err);
+    }
 }
 
 function renderVideos(videos) {
@@ -166,10 +207,7 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        // Apply Smart Proxy to Predicted or Provided Thumbnails
         let thumbnail = video.thumbnail_url || predictThumbnail(video.url);
-
-        // Proxy logic: Use weserv.nl to bypass local ISP blocking for images
         if (thumbnail && !thumbnail.includes('images.weserv.nl')) {
             const encodedUrl = encodeURIComponent(thumbnail.replace(/^https?:\/\//, ''));
             thumbnail = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
@@ -181,8 +219,7 @@ function renderVideos(videos) {
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
             <div class="video-thumb" id="thumb-${video.id}">
                 ${hasThumb ?
-                `<img src="${thumbnail}" class="video-poster" 
-                          onerror="handleBrokenImage(this, '${video.url}')">
+                `<img src="${thumbnail}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
                      <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
                         <span class="play-icon">▶</span>
                         <p>Click to Preview</p>
@@ -202,7 +239,6 @@ function renderVideos(videos) {
     `}).join('');
 }
 
-// Handle images that still fail despite proxy (User probably needs VPN for the actual embed too)
 function handleBrokenImage(img, originalUrl) {
     const parent = img.parentElement;
     parent.classList.add('broken-stream');
@@ -210,7 +246,7 @@ function handleBrokenImage(img, originalUrl) {
         <div class="vpn-warning">
             <span>🚫</span>
             <p>Access Blocked</p>
-            <small>VPN may be required for this video</small>
+            <small>VPN may be required</small>
             <a href="${originalUrl}" target="_blank" class="mini-btn">Watch on Site</a>
         </div>
     `;
@@ -218,30 +254,21 @@ function handleBrokenImage(img, originalUrl) {
 
 function loadEmbed(id, url) {
     const container = document.getElementById(`thumb-${id}`);
-    if (container) {
-        container.innerHTML = getEmbedHtml(url);
-    }
+    if (container) container.innerHTML = getEmbedHtml(url);
 }
 
-// Logic to convert main URL to embed format
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
 
     let finalUrl = url;
-
     if (url.includes('xhamster')) {
         const id = getXHId(url);
         if (id) finalUrl = `https://xhamster.com/embed/${id}`;
-    }
-
-    if (url.includes('spankbang.com')) {
+    } else if (url.includes('spankbang.com')) {
         const match = url.match(/\/video\/([a-z0-9]+)/i);
-        if (match) {
-            finalUrl = `https://spankbang.com/${match[1]}/embed/`;
-        }
+        if (match) finalUrl = `https://spankbang.com/${match[1]}/embed/`;
     }
-
     return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
 }
 
@@ -250,28 +277,21 @@ function getXHId(url) {
     return match ? (match[2] || match[1]) : null;
 }
 
-// Smart Prediction for xHamster thumbnails
 function predictThumbnail(url) {
     if (url.includes('xhamster')) {
         const id = getXHId(url);
-        if (id) {
-            return `https://ic.xhcdn.com/videos/thumbnails/${id}/1.jpg`;
-        }
+        if (id) return `https://ic.xhcdn.com/videos/thumbnails/${id}/1.jpg`;
     }
     return '';
 }
 
-// Extract title from URL
 function extractTitleFromUrl(url) {
     try {
         const urlObj = new URL(url);
-        let segment = urlObj.pathname.split('/').pop();
-        if (!segment && urlObj.pathname.split('/').length > 1) {
-            segment = urlObj.pathname.split('/').slice(-2, -1)[0];
-        }
+        let segment = urlObj.pathname.split('/').filter(s => s).pop() || "Untitled";
         segment = segment.replace(/(-id[0-9]+)$|(-[0-9]+)$/i, '');
         segment = segment.replace(/[-_]/g, ' ');
-        return segment ? segment.charAt(0).toUpperCase() + segment.slice(1) : "Untitled";
+        return segment.charAt(0).toUpperCase() + segment.slice(1);
     } catch (e) {
         return "Untitled Video";
     }
@@ -280,49 +300,36 @@ function extractTitleFromUrl(url) {
 videoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = document.getElementById('video-url').value;
-    const thumbnail_url = document.getElementById('video-thumbnail').value;
+    const thumbnail_url = thumbInput.value;
     const title = extractTitleFromUrl(url);
 
-    let { error } = await db
-        .from('videos')
-        .insert([{ url, title, thumbnail_url }]);
-
-    if (error && error.message.includes('thumbnail_url')) {
-        const { error: fallbackError } = await db
-            .from('videos')
-            .insert([{ url, title }]);
-        error = fallbackError;
-    }
-
-    if (error) {
-        alert('Error adding video: ' + error.message);
-    } else {
+    try {
+        let { error } = await db.from('videos').insert([{ url, title, thumbnail_url }]);
+        if (error && error.message.includes('thumbnail_url')) {
+            const { error: fallbackError } = await db.from('videos').insert([{ url, title }]);
+            error = fallbackError;
+        }
+        if (error) throw error;
         videoForm.reset();
+        uploadStatus.textContent = '';
         loadVideos();
+    } catch (err) {
+        console.error("Vault: Save Error:", err);
+        alert("Failed to save: " + err.message);
     }
 });
 
 async function deleteVideo(id) {
-    if (!confirm('Are you sure you want to delete this video?')) return;
-
-    const { error } = await db
-        .from('videos')
-        .delete()
-        .eq('id', id);
-
-    if (error) {
-        alert('Error deleting video: ' + error.message);
-    } else {
-        loadVideos();
-    }
+    if (!confirm('Are you sure?')) return;
+    const { error } = await db.from('videos').delete().eq('id', id);
+    if (error) alert('Error: ' + error.message);
+    else loadVideos();
 }
 
-// Global exposure
 window.deleteVideo = deleteVideo;
 window.loadEmbed = loadEmbed;
 window.handleBrokenImage = handleBrokenImage;
 
-// --- UI Logic ---
 showAdminBtn.addEventListener('click', () => {
     isAdminVisible = !isAdminVisible;
     adminPanel.classList.toggle('hidden');
@@ -331,14 +338,8 @@ showAdminBtn.addEventListener('click', () => {
 
 searchInput.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase();
-    const cards = document.querySelectorAll('.video-card');
-
-    cards.forEach(card => {
+    document.querySelectorAll('.video-card').forEach(card => {
         const title = card.getAttribute('data-title') || '';
-        if (title.includes(term)) {
-            card.style.display = 'block';
-        } else {
-            card.style.display = 'none';
-        }
+        card.style.display = title.includes(term) ? 'block' : 'none';
     });
 });
