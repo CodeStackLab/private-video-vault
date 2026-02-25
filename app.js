@@ -135,7 +135,6 @@ updatePasswordBtn.addEventListener('click', async () => {
 
 // --- Video Functions ---
 async function loadVideos() {
-    // Try to load videos
     const { data, error } = await db
         .from('videos')
         .select('*')
@@ -143,7 +142,6 @@ async function loadVideos() {
 
     if (error) {
         console.error('Vault: Error loading videos:', error);
-        // If the thumbnail column is missing, load without it as a fallback
         if (error.message.includes('thumbnail_url')) {
             const { data: fallbackData, error: fallbackError } = await db
                 .from('videos')
@@ -168,16 +166,18 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        const hasThumb = video.thumbnail_url && video.thumbnail_url !== '';
+        // Use provided thumbnail OR predicted one
+        const thumbnail = video.thumbnail_url || predictThumbnail(video.url);
+        const hasThumb = thumbnail && thumbnail !== '';
 
         return `
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}" data-hobby="">
             <div class="video-thumb" id="thumb-${video.id}">
                 ${hasThumb ?
-                `<img src="${video.thumbnail_url}" class="video-poster" alt="Preview">
+                `<img src="${thumbnail}" class="video-poster" onerror="this.src='https://placehold.co/600x400/100b1a/white?text=Preview+Blocked'">
                      <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
                         <span class="play-icon">▶</span>
-                        <p>Click to Load Player</p>
+                        <p>Click to Preview</p>
                      </div>`
                 : getEmbedHtml(video.url)
             }
@@ -185,9 +185,9 @@ function renderVideos(videos) {
             <div class="video-info">
                 <h3>${video.title || 'Untitled'}</h3>
                 <div class="card-actions">
-                    <a href="${video.url}" target="_blank" class="live-btn">Live URL</a>
+                    <a href="${video.url}" target="_blank" class="live-btn">Open Live URL</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
-                    ${hasThumb ? `<button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Preview</button>` : ''}
+                    <button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Try Embed</button>
                 </div>
             </div>
         </div>
@@ -201,24 +201,18 @@ function loadEmbed(id, url) {
     }
 }
 
-// Logic to convert main URL to embed format
+// Logic to convert main URL to embed format and generate thumbnails
 function getEmbedHtml(url) {
     if (!url) return '';
     if (url.includes('<iframe')) return url;
 
     let finalUrl = url;
 
-    // xHamster logic: convert main URL to embed URL
     if (url.includes('xhamster')) {
-        // e.g. xhamster.com/videos/title-id12345 -> xhamster.com/embed/12345
-        const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
-        if (match) {
-            const id = match[2] || match[1];
-            finalUrl = `https://xhamster.com/embed/${id}`;
-        }
+        const id = getXHId(url);
+        if (id) finalUrl = `https://xhamster.com/embed/${id}`;
     }
 
-    // SpankBang logic
     if (url.includes('spankbang.com')) {
         const match = url.match(/\/video\/([a-z0-9]+)/i);
         if (match) {
@@ -226,8 +220,25 @@ function getEmbedHtml(url) {
         }
     }
 
-    // Generic fallback: ensure it's treated as a URL for iframe
     return `<iframe src="${finalUrl}" allowfullscreen></iframe>`;
+}
+
+function getXHId(url) {
+    const match = url.match(/([0-9a-z]+)$|id([0-9]+)/i);
+    return match ? (match[2] || match[1]) : null;
+}
+
+// Smart Prediction for xHamster thumbnails
+function predictThumbnail(url) {
+    if (url.includes('xhamster')) {
+        const id = getXHId(url);
+        if (id) {
+            // Predict thumbnail using xHamster's common image patterns
+            return `https://ic.xhcdn.com/videos/thumbnails/${id}/1.jpg`;
+        }
+    }
+    // Add more providers here if patterns are known
+    return '';
 }
 
 // Extract title from URL
@@ -252,28 +263,23 @@ videoForm.addEventListener('submit', async (e) => {
     const thumbnail_url = document.getElementById('video-thumbnail').value;
     const title = extractTitleFromUrl(url);
 
-    console.log("Vault: Trying to add video...");
+    console.log("Vault: Adding video with auto-title:", title);
 
-    // TRY 1: Insert WITH thumbnail_url
-    let { error } = await db
+    const { error } = await db
         .from('videos')
         .insert([{ url, title, thumbnail_url }]);
 
-    // FALLBACK: If thumbnail_url column is missing, try WITHOUT it
     if (error && error.message.includes('thumbnail_url')) {
-        console.warn("Vault: thumbnail_url column missing! Retrying without it...");
         const { error: fallbackError } = await db
             .from('videos')
             .insert([{ url, title }]);
-        error = fallbackError;
+        if (fallbackError) alert('Error: ' + fallbackError.message);
+    } else if (error) {
+        alert('Error adding video: ' + error.message);
     }
 
-    if (error) {
-        alert('Error adding video: ' + error.message);
-    } else {
-        videoForm.reset();
-        loadVideos();
-    }
+    videoForm.reset();
+    loadVideos();
 });
 
 async function deleteVideo(id) {
