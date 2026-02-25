@@ -23,7 +23,7 @@ body {
     color: var(--text-white);
     min-height: 100vh;
     overflow-x: hidden;
-    background-image: 
+    background-image:
         radial-gradient(circle at 20% 20%, rgba(157, 78, 221, 0.15) 0%, transparent 40%),
         radial-gradient(circle at 80% 80%, rgba(60, 9, 108, 0.2) 0%, transparent 40%);
 }
@@ -53,7 +53,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Glassmorphism Classes */
@@ -276,9 +278,20 @@ button:hover {
 }
 
 /* Forms and Typography */
-h1 { font-size: 2.5rem; margin-bottom: 12px; }
-h2 { font-size: 1.8rem; margin-bottom: 10px; }
-p { color: var(--text-muted); line-height: 1.6; }
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+}
+
+h2 {
+    font-size: 1.8rem;
+    margin-bottom: 10px;
+}
+
+p {
+    color: var(--text-muted);
+    line-height: 1.6;
+}
 
 .error-msg {
     color: var(--error);
@@ -286,15 +299,99 @@ p { color: var(--text-muted); line-height: 1.6; }
     font-size: 0.9rem;
 }
 
-/* Responsive */
+/* Responsive Design Improvements */
 @media (max-width: 768px) {
+    .nav-content {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .nav-actions {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .nav-actions button {
+        flex: 1;
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+
+    .auth-card {
+        padding: 30px 20px;
+        border-radius: 20px;
+    }
+
+    .auth-card h1 {
+        font-size: 1.8rem;
+    }
+
+    .input-group {
+        flex-direction: column;
+    }
+
+    .input-group input,
+    .input-group button {
+        width: 100%;
+    }
+
+    .admin-section {
+        margin: 20px auto;
+        padding: 0 15px;
+    }
+
+    .glass-card {
+        padding: 20px;
+    }
+
     .grid-form {
         grid-template-columns: 1fr;
+        gap: 10px;
     }
-    .auth-card {
-        padding: 30px;
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
     }
-    .grid-form button {
+
+    .filter-bar {
         width: 100%;
+    }
+
+    .filter-bar input {
+        width: 100%;
+    }
+
+    .video-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .video-info {
+        padding: 15px;
+    }
+
+    .video-info h3 {
+        font-size: 1rem;
+    }
+
+    .card-actions {
+        flex-wrap: wrap;
+    }
+}
+
+/* Specific Fix for Mobile Video Embeds */
+@media (max-width: 480px) {
+    .video-thumb {
+        border-radius: 12px 12px 0 0;
+    }
+
+    .video-card {
+        border-radius: 12px;
     }
 }
