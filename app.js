@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function hideLoader() {
-    loader.classList.add('hidden');
+    if (loader) loader.classList.add('hidden');
 }
 
 // --- Auth Functions ---
@@ -66,69 +66,75 @@ async function checkAuth() {
 }
 
 function showAuthScreen() {
-    authScreen.classList.remove('hidden');
-    mainContent.classList.add('hidden');
+    if (authScreen) authScreen.classList.remove('hidden');
+    if (mainContent) mainContent.classList.add('hidden');
 }
 
 function showMainContent() {
-    authScreen.classList.add('hidden');
-    mainContent.classList.remove('hidden');
+    if (authScreen) authScreen.classList.add('hidden');
+    if (mainContent) mainContent.classList.remove('hidden');
 }
 
-unlockBtn.addEventListener('click', async () => {
-    const pwd = adminPasswordInput.value;
-    if (!pwd) return;
+if (unlockBtn) {
+    unlockBtn.addEventListener('click', async () => {
+        const pwd = adminPasswordInput.value;
+        if (!pwd) return;
 
-    try {
-        const { data: settings, error: fetchError } = await db
-            .from('settings')
-            .select('admin_password')
-            .single();
-
-        if (fetchError && (fetchError.code === 'PGRST116' || fetchError.message.includes('0 rows'))) {
-            const { error: initError } = await db
+        try {
+            const { data: settings, error: fetchError } = await db
                 .from('settings')
-                .insert([{ id: 1, admin_password: pwd }]);
-            if (initError) throw initError;
-        } else if (settings && settings.admin_password !== pwd) {
-            authError.classList.remove('hidden');
-            return;
+                .select('admin_password')
+                .single();
+
+            if (fetchError && (fetchError.code === 'PGRST116' || fetchError.message.includes('0 rows'))) {
+                const { error: initError } = await db
+                    .from('settings')
+                    .insert([{ id: 1, admin_password: pwd }]);
+                if (initError) throw initError;
+            } else if (settings && settings.admin_password !== pwd) {
+                authError.classList.remove('hidden');
+                return;
+            }
+
+            currentPassword = pwd;
+            localStorage.setItem('vault_password', pwd);
+            showMainContent();
+            loadVideos();
+        } catch (err) {
+            console.error("Vault: Unlock Error:", err);
+            alert("Connection Error: " + err.message);
         }
+    });
+}
 
-        currentPassword = pwd;
-        localStorage.setItem('vault_password', pwd);
-        showMainContent();
-        loadVideos();
-    } catch (err) {
-        console.error("Vault: Unlock Error:", err);
-        alert("Connection Error: " + err.message);
-    }
-});
-
-logoutBtn.addEventListener('click', () => {
-    localStorage.removeItem('vault_password');
-    currentPassword = '';
-    window.location.reload();
-});
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        localStorage.removeItem('vault_password');
+        currentPassword = '';
+        window.location.reload();
+    });
+}
 
 // --- Settings Functions ---
-updatePasswordBtn.addEventListener('click', async () => {
-    const newPwd = newPasswordInput.value;
-    if (!newPwd) return;
+if (updatePasswordBtn) {
+    updatePasswordBtn.addEventListener('click', async () => {
+        const newPwd = newPasswordInput.value;
+        if (!newPwd) return;
 
-    const { error } = await db
-        .from('settings')
-        .update({ admin_password: newPwd })
-        .eq('id', 1);
+        const { error } = await db
+            .from('settings')
+            .update({ admin_password: newPwd })
+            .eq('id', 1);
 
-    if (error) alert('Error: ' + error.message);
-    else {
-        alert('Password updated!');
-        currentPassword = newPwd;
-        localStorage.setItem('vault_password', newPwd);
-        newPasswordInput.value = '';
-    }
-});
+        if (error) alert('Error: ' + error.message);
+        else {
+            alert('Password updated!');
+            currentPassword = newPwd;
+            localStorage.setItem('vault_password', newPwd);
+            newPasswordInput.value = '';
+        }
+    });
+}
 
 // --- Supabase Storage Upload Logic ---
 if (screenshotUpload) {
@@ -193,30 +199,38 @@ function renderVideos(videos) {
     }
 
     videoGrid.innerHTML = videos.map(video => {
-        // DETECT: Manual Thumbnail (Uploaded or Pasted) vs Predicted Thumbnail
-        const manualThumb = video.thumbnail_url && video.thumbnail_url !== '';
+        // PRIORITY LOGIC:
+        // 1. If manual thumbnail exists -> Always show image and REDIRECT on click.
+        // 2. If no manual thumb -> Try predicted thumb and EMBED on click.
+        // 3. Else -> Show Embed player directly.
+
+        const manualThumb = video.thumbnail_url && video.thumbnail_url.trim() !== '';
         const predictedThumb = !manualThumb ? predictThumbnail(video.url) : null;
 
         let displayImg = manualThumb ? video.thumbnail_url : predictedThumb;
 
-        // Proxy logic: Use weserv.nl for predicted thumbs if needed
+        // Proxy logic for predicted thumbs (manual thumbs are usually trusted Supabase or user URLs)
         if (displayImg && !manualThumb && !displayImg.includes('images.weserv.nl') && !displayImg.includes('supabase.co')) {
             const encodedUrl = encodeURIComponent(displayImg.replace(/^https?:\/\//, ''));
             displayImg = `https://images.weserv.nl/?url=${encodedUrl}&n=-1`;
         }
 
-        const hasAnyImage = displayImg && displayImg !== '';
-
         return `
         <div class="video-card" data-id="${video.id}" data-title="${(video.title || '').toLowerCase()}">
             <div class="video-thumb" id="thumb-${video.id}">
-                ${hasAnyImage ?
-                `<img src="${displayImg}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
-                     <div class="play-overlay" onclick="${manualThumb ? `window.open('${video.url}', '_blank')` : `loadEmbed('${video.id}', '${video.url}')`}">
-                        <span class="play-icon">${manualThumb ? '🔗' : '▶'}</span>
-                        <p>${manualThumb ? 'Open Live URL' : 'Click to Load Embed'}</p>
+                ${manualThumb ?
+                `<img src="${video.thumbnail_url}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
+                     <div class="play-overlay" onclick="window.open('${video.url}', '_blank')">
+                        <span class="play-icon">🔗</span>
+                        <p>Open Redirect URL</p>
                      </div>`
-                : getEmbedHtml(video.url)
+                : predictedThumb ?
+                    `<img src="${displayImg}" class="video-poster" onerror="handleBrokenImage(this, '${video.url}')">
+                     <div class="play-overlay" onclick="loadEmbed('${video.id}', '${video.url}')">
+                        <span class="play-icon">▶</span>
+                        <p>Watch in Vault</p>
+                     </div>`
+                    : getEmbedHtml(video.url)
             }
             </div>
             <div class="video-info">
@@ -224,7 +238,7 @@ function renderVideos(videos) {
                 <div class="card-actions">
                     <a href="${video.url}" target="_blank" class="live-btn">Open Live URL</a>
                     <button class="del-btn" onclick="deleteVideo('${video.id}')">Delete</button>
-                    <button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Force Embed</button>
+                    ${manualThumb ? '' : `<button class="secondary-btn" onclick="loadEmbed('${video.id}', '${video.url}')">Try Embed</button>`}
                 </div>
             </div>
         </div>
@@ -292,7 +306,8 @@ function extractTitleFromUrl(url) {
 if (videoForm) {
     videoForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const url = document.getElementById('video-url').value;
+        const urlInput = document.getElementById('video-url');
+        const url = urlInput.value;
         const thumbnail_url = thumbInput.value;
         const title = extractTitleFromUrl(url);
 
@@ -304,7 +319,7 @@ if (videoForm) {
             }
             if (error) throw error;
             videoForm.reset();
-            uploadStatus.textContent = '';
+            if (uploadStatus) uploadStatus.textContent = '';
             loadVideos();
         } catch (err) {
             console.error("Vault: Save Error:", err);
